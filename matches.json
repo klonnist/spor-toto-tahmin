@@ -1,0 +1,170 @@
+{
+  "week": "2026-09-14",
+  "matches": [
+    {
+      "match_id": "m1",
+      "league": "Süper Lig",
+      "home_team": "Galatasaray",
+      "away_team": "Fenerbahçe",
+      "kickoff": "2026-09-14T19:00:00+03:00",
+      "odds": { "1": 2.10, "X": 3.40, "2": 3.20 },
+      "home_form_last5": "WWDWW",
+      "away_form_last5": "WDWLW",
+      "h2h_last5": "1-1-2-1-X"
+    },
+    {
+      "match_id": "m2",
+      "league": "Süper Lig",
+      "home_team": "Beşiktaş",
+      "away_team": "Trabzonspor",
+      "kickoff": "2026-09-14T16:00:00+03:00",
+      "odds": { "1": 2.40, "X": 3.10, "2": 2.90 },
+      "home_form_last5": "WDLWD",
+      "away_form_last5": "WWDLW",
+      "h2h_last5": "2-1-X-1-2"
+    },
+    {
+      "match_id": "m3",
+      "league": "Premier League",
+      "home_team": "Arsenal",
+      "away_team": "Chelsea",
+      "kickoff": "2026-09-14T18:30:00+03:00",
+      "odds": { "1": 1.95, "X": 3.60, "2": 3.80 },
+      "home_form_last5": "WWWDW",
+      "away_form_last5": "DWLWD",
+      "h2h_last5": "1-1-X-2-1"
+    },
+    {
+      "match_id": "m4",
+      "league": "Premier League",
+      "home_team": "Liverpool",
+      "away_team": "Manchester City",
+      "kickoff": "2026-09-14T21:00:00+03:00",
+      "odds": { "1": 2.60, "X": 3.50, "2": 2.50 },
+      "home_form_last5": "WDWWL",
+      "away_form_last5": "WWLWW",
+      "h2h_last5": "2-1-2-X-1"
+    },
+    {
+      "match_id": "m5",
+      "league": "La Liga",
+      "home_team": "Real Madrid",
+      "away_team": "Barcelona",
+      "kickoff": "2026-09-14T22:00:00+03:00",
+      "odds": { "1": 2.20, "X": 3.70, "2": 2.90 },
+      "home_form_last5": "WWWLW",
+      "away_form_last5": "WLWWD",
+      "h2h_last5": "1-2-1-X-2"
+    },
+    {
+      "match_id": "m6",
+      "league": "La Liga",
+      "home_team": "Atletico Madrid",
+      "away_team": "Sevilla",
+      "kickoff": "2026-09-14T19:30:00+03:00",
+      "odds": { "1": 1.65, "X": 3.90, "2": 5.20 },
+      "home_form_last5": "WWDWW",
+      "away_form_last5": "LDLWD",
+      "h2h_last5": "1-1-1-X-1"
+    },
+    {
+      "match_id": "m7",
+      "league": "Serie A",
+      "home_team": "Inter",
+      "away_team": "Juventus",
+      "kickoff": "2026-09-14T21:45:00+03:00",
+      "odds": { "1": 2.05, "X": 3.30, "2": 3.60 },
+      "home_form_last5": "WWDWD",
+      "away_form_last5": "DWLWW",
+      "h2h_last5": "X-1-2-1-X"
+    },
+    {
+      "match_id": "m8",
+      "league": "Serie A",
+      "home_team": "AC Milan",
+      "away_team": "Napoli",
+      "kickoff": "2026-09-14T18:00:00+03:00",
+      "odds": { "1": 2.70, "X": 3.20, "2": 2.55 },
+      "home_form_last5": "DWWLW",
+      "away_form_last5": "WWWDL",
+      "h2h_last5": "2-X-1-2-1"
+    },
+    {
+      "match_id": "m9",
+      "league": "Bundesliga",
+      "home_team": "Bayern Munich",
+      "away_team": "Borussia Dortmund",
+      "kickoff": "2026-09-14T17:30:00+03:00",
+      "odds": { "1": 1.55, "X": 4.20, "2": 5.50 },
+      "home_form_last5": "WWWWD",
+      "away_form_last5": "WDLWW",
+      "h2h_last5": "1-1-X-1-2"
+    },
+    {
+      "match_id": "m10",
+      "league": "Bundesliga",
+      "home_team": "RB Leipzig",
+      "away_team": "Bayer Leverkusen",
+      "kickoff": "2026-09-14T15:30:00+03:00",
+      "odds": { "1": 2.85, "X": 3.40, "2": 2.35 },
+      "home_form_last5": "LDWDW",
+      "away_form_last5": "WWDWW",
+      "h2h_last5": "2-2-X-1-2"
+    },
+    {
+      "match_id": "m11",
+      "league": "Ligue 1",
+      "home_team": "PSG",
+      "away_team": "Marseille",
+      "kickoff": "2026-09-14T21:00:00+03:00",
+      "odds": { "1": 1.45, "X": 4.60, "2": 6.00 },
+      "home_form_last5": "WWWWW",
+      "away_form_last5": "DLWDL",
+      "h2h_last5": "1-1-1-X-1"
+    },
+    {
+      "match_id": "m12",
+      "league": "Süper Lig",
+      "home_team": "Başakşehir",
+      "away_team": "Konyaspor",
+      "kickoff": "2026-09-14T14:00:00+03:00",
+      "odds": { "1": 2.15, "X": 3.15, "2": 3.40 },
+      "home_form_last5": "WDWLD",
+      "away_form_last5": "DLDWL",
+      "h2h_last5": "X-1-2-X-1"
+    },
+    {
+      "match_id": "m13",
+      "league": "Eredivisie",
+      "home_team": "Ajax",
+      "away_team": "PSV",
+      "kickoff": "2026-09-14T16:45:00+03:00",
+      "odds": { "1": 2.50, "X": 3.60, "2": 2.60 },
+      "home_form_last5": "WLWDW",
+      "away_form_last5": "WWDLW",
+      "h2h_last5": "2-1-X-2-1"
+    },
+    {
+      "match_id": "m14",
+      "league": "Championship",
+      "home_team": "Leeds United",
+      "away_team": "Norwich City",
+      "kickoff": "2026-09-14T14:00:00+03:00",
+      "odds": { "1": 1.90, "X": 3.50, "2": 4.00 },
+      "home_form_last5": "WWDWL",
+      "away_form_last5": "LDWDL",
+      "h2h_last5": "1-X-1-2-1"
+    },
+    {
+      "match_id": "m15",
+      "league": "Süper Lig",
+      "home_team": "Kasımpaşa",
+      "away_team": "Antalyaspor",
+      "kickoff": "2026-09-14T17:00:00+03:00",
+      "odds": { "1": 2.65, "X": 3.10, "2": 2.75 },
+      "home_form_last5": "DLDWL",
+      "away_form_last5": "LWDLD",
+      "h2h_last5": "X-2-1-X-2"
+    }
+  ]
+}
