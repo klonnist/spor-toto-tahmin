@@ -19,6 +19,7 @@ from google.genai import errors as genai_errors
 from google.genai import types
 
 MODEL_ID = "gemini-3.6-flash"
+FALLBACK_MODEL_ID = "gemini-flash-latest"  # birincisi sürekli 503 verirse buna geçilir
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
@@ -200,31 +201,34 @@ SYSTEM_PROMPT = (
 )
 
 
-def get_predictions(client: genai.Client, compact_matches: list, max_retries: int = 3) -> dict:
+def get_predictions(client: genai.Client, compact_matches: list, max_retries: int = 5) -> dict:
     last_error = None
-    for attempt in range(max_retries):
-        if attempt > 0:
-            delay = 2 ** attempt
-            print(f"UYARI: Gemini geçici hata verdi, {delay}s sonra tekrar denenecek "
-                  f"({attempt}/{max_retries - 1}).", file=sys.stderr)
-            time.sleep(delay)
-        try:
-            response = client.models.generate_content(
-                model=MODEL_ID,
-                contents=(
-                    "Aşağıdaki maçlar için tahmin üret:\n\n"
-                    + json.dumps(compact_matches, ensure_ascii=False)
-                ),
-                config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
-                    response_mime_type="application/json",
-                    response_json_schema=PREDICTION_SCHEMA,
-                ),
-            )
-            data = json.loads(response.text)
-            return {p["match_id"]: p for p in data["predictions"]}
-        except genai_errors.ServerError as e:
-            last_error = e
+    for model_id in (MODEL_ID, FALLBACK_MODEL_ID):
+        for attempt in range(max_retries):
+            if attempt > 0:
+                delay = min(2 ** attempt, 30)
+                print(f"UYARI: {model_id} geçici hata verdi, {delay}s sonra tekrar denenecek "
+                      f"({attempt}/{max_retries - 1}).", file=sys.stderr)
+                time.sleep(delay)
+            try:
+                response = client.models.generate_content(
+                    model=model_id,
+                    contents=(
+                        "Aşağıdaki maçlar için tahmin üret:\n\n"
+                        + json.dumps(compact_matches, ensure_ascii=False)
+                    ),
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_json_schema=PREDICTION_SCHEMA,
+                    ),
+                )
+                data = json.loads(response.text)
+                return {p["match_id"]: p for p in data["predictions"]}
+            except genai_errors.ServerError as e:
+                last_error = e
+        print(f"UYARI: {model_id} tüm denemelerde başarısız oldu, farklı modele geçiliyor.",
+              file=sys.stderr)
     raise last_error
 
 
