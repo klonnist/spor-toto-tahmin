@@ -38,34 +38,27 @@ dosyasını açarak sonucu görebilirsiniz.
    (güncel limitler için Google AI Studio'daki **Rate limits** sayfasına bakın) — 15
    maçlık haftalık bir bülten bu limitlerin çok altında kalır.
 
-## 2. RapidAPI Key Alma (API-Football) — gerçek maçlar ve doğru tarihler için
+## 2. The Odds API Key Alma (ücretsiz) — gerçek maçlar, doğru tarihler ve gerçek oranlar için
 
 `matches.json` sadece bir **örnek şablondur** (sabit tarih/maç içerir). Gerçek, güncel
-fikstürleri ve doğru tarihleri görmek için RapidAPI key'i şart:
+fikstürleri, doğru tarihleri ve gerçek bahis oranlarını görmek için
+[the-odds-api.com](https://the-odds-api.com) key'i şart:
 
-1. https://rapidapi.com adresine gidip ücretsiz hesap açın.
-2. Arama kutusuna **API-FOOTBALL** yazıp resmi API-Football sayfasına girin
-   (yayıncı: `api-sports`).
-3. Sağ üstteki bir plana (Basic/free plan günlük istek limitiyle gelir) **Subscribe** deyin.
-4. Sayfadaki **X-RapidAPI-Key** değerini kopyalayın (Endpoints sekmesindeki örnek kod
-   bloklarında da görünür).
-5. `RAPIDAPI_KEY` secret'i tanımlıysa `main.py` otomatik olarak `main.py` içindeki
-   `LEAGUE_IDS` listesindeki liglerin (Süper Lig, Premier League, La Liga, Serie A,
-   Bundesliga, Ligue 1) önümüzdeki `FIXTURE_WINDOW_DAYS` (varsayılan 7) gün içindeki
-   gerçek fikstürlerini bulur, en erken `MAX_MATCHES` (varsayılan 15) tanesini seçer ve
-   her biri için gerçek oranları, son 5 maçlık formu ve H2H geçmişini çeker — elle bir
-   fikstür listesi hazırlamanıza gerek yoktur.
-6. İsterseniz `FIXTURES_CONFIG` ortam değişkeniyle belirli maçları elle seçebilirsiniz
-   (fixture/team/league id'lerini içeren bir JSON dosyası — id'leri API-Football'un
-   `/fixtures?date=...` ucundan bulabilirsiniz); bu durumda otomatik keşif devre dışı
-   kalır.
+1. https://the-odds-api.com adresine gidip **Get API Key** ile ücretsiz kaydolun
+   (kredi kartı istemez, key e-postanıza gelir).
+2. Ücretsiz plan: **ayda 500 kredi**, `h2h` (1X2) pazarı dahil — 15 maçlık haftalık bir
+   bülten için fazlasıyla yeterli (her lig sorgusu 1 kredi harcar; `main.py` haftada
+   6 lig sorgular).
+3. `ODDS_API_KEY` secret'i tanımlıysa `main.py`, `main.py` içindeki `LEAGUE_SPORT_KEYS`
+   listesindeki liglerin (Süper Lig, Premier League, La Liga, Serie A, Bundesliga,
+   Ligue 1) önümüzdeki `FIXTURE_WINDOW_DAYS` (varsayılan 7) gün içindeki gerçek
+   fikstürlerini ve gerçek 1X2 oranlarını otomatik çeker, en erken `MAX_MATCHES`
+   (varsayılan 15) tanesini bültene koyar.
 
-> `RAPIDAPI_KEY` tanımlı değilse, ya da API-Football o hafta hiç maç bulamazsa, script
-> otomatik olarak `matches.json` şablonuna döner (site boş kalmasın diye).
->
-> Not: API-Football'daki lig ID'leri (`main.py` → `LEAGUE_IDS`) yaygın kullanılan
-> standart ID'lerdir; bir lig sürekli boş sonuç veriyorsa doğru ID'yi API-Football'un
-> `/leagues?name=...` ucundan teyit edip güncelleyin.
+> The Odds API form/H2H istatistiği sağlamıyor — bu alanlar sitede "veri yok" olarak
+> görünür ve Gemini yorumlarını sadece oranlara dayandırır. `ODDS_API_KEY` tanımlı
+> değilse, ya da o hafta hiç maç bulunamazsa, script otomatik olarak `matches.json`
+> şablonuna döner (site boş kalmasın diye).
 
 ## 3. GitHub Secrets Ayarları
 
@@ -74,7 +67,7 @@ Reponuzda:
 1. **Settings → Secrets and variables → Actions** sekmesine gidin.
 2. **New repository secret** ile aşağıdakileri ekleyin:
    - `GEMINI_API_KEY` → Google AI Studio'dan aldığınız ücretsiz anahtar
-   - `RAPIDAPI_KEY` → (opsiyonel) RapidAPI'dan aldığınız anahtar
+   - `ODDS_API_KEY` → (opsiyonel ama önerilir) the-odds-api.com'dan aldığınız ücretsiz anahtar
 3. Workflow, `GITHUB_TOKEN`'ı otomatik sağlar; ek bir işlem gerekmez, ancak
    **Settings → Actions → General → Workflow permissions** altında
    **Read and write permissions** seçili olmalıdır (gh-pages branch'ine push

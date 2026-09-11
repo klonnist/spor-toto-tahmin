@@ -31,7 +31,7 @@ jobs:
       - name: Generate predictions and index.html
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          RAPIDAPI_KEY: ${{ secrets.RAPIDAPI_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python main.py
 
       - name: Prepare publish directory

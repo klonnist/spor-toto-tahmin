@@ -1,7 +1,7 @@
 """Spor Toto haftalık tahmin üreticisi.
 
 Akış:
-  1. Maç verisini oku (matches.json ya da API-Football/RapidAPI)
+  1. Maç verisini oku (matches.json ya da The Odds API üzerinden gerçek fikstür/oran)
   2. Kompakt istatistik JSON'u hazırla (token tasarrufu için)
   3. Google Gemini'den (ücretsiz katman) structured output ile tahmin al
   4. index.html olarak render et
@@ -22,23 +22,22 @@ MODEL_ID = "gemini-3.6-flash"
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
-RAPIDAPI_HOST = "api-football-v1.p.rapidapi.com"
-RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}/v3"
+ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4"
 
-VALID_PREDICTIONS = {"1", "X", "2", "1X", "X2", "12"}
-
-# API-Football lig ID'leri (bu liglerin fikstürleri otomatik taranır).
-# Bir lig sürekli boş sonuç veriyorsa ID'yi /leagues?name=... ile doğrulayın.
-LEAGUE_IDS = {
-    203: "Süper Lig",
-    39: "Premier League",
-    140: "La Liga",
-    135: "Serie A",
-    78: "Bundesliga",
-    61: "Ligue 1",
+# the-odds-api.com sport key'leri (https://the-odds-api.com/sports-odds-data/sports-apis.html
+# adresinden doğrulanmıştır). Form/H2H bu API'de yok; sadece gerçek fikstür + gerçek oran sağlar.
+LEAGUE_SPORT_KEYS = {
+    "soccer_turkey_super_league": "Süper Lig",
+    "soccer_epl": "Premier League",
+    "soccer_spain_la_liga": "La Liga",
+    "soccer_italy_serie_a": "Serie A",
+    "soccer_germany_bundesliga": "Bundesliga",
+    "soccer_france_ligue_one": "Ligue 1",
 }
 MAX_MATCHES = int(os.environ.get("MAX_MATCHES", "15"))
 FIXTURE_WINDOW_DAYS = int(os.environ.get("FIXTURE_WINDOW_DAYS", "7"))
+
+VALID_PREDICTIONS = {"1", "X", "2", "1X", "X2", "12"}
 
 
 # ---------------------------------------------------------------------------
@@ -50,155 +49,91 @@ def load_matches_from_file(path: str) -> dict:
         return json.load(f)
 
 
-def fetch_fixture_odds(session: requests.Session, headers: dict, fixture_id: int) -> dict:
-    resp = session.get(
-        f"{RAPIDAPI_BASE_URL}/odds",
-        headers=headers,
-        params={"fixture": fixture_id},
-        timeout=15,
-    )
-    if not resp.ok:
-        print(f"UYARI: oran alınamadı (fixture={fixture_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
-        return {}
-    data = resp.json().get("response", [])
-    if not data:
-        return {}
-    bookmaker = data[0]["bookmakers"][0]
-    match_winner = next(
-        (bet for bet in bookmaker["bets"] if bet["name"] == "Match Winner"), None
-    )
-    if not match_winner:
-        return {}
-    odds = {v["value"]: float(v["odd"]) for v in match_winner["values"]}
-    return {"1": odds.get("Home"), "X": odds.get("Draw"), "2": odds.get("Away")}
+def extract_1x2_odds(event: dict) -> dict:
+    """the-odds-api.com'un h2h (moneyline) pazarından ilk kullanılabilir bookmaker'ın
+    1/X/2 oranlarını çıkarır."""
+    home_name = event.get("home_team")
+    away_name = event.get("away_team")
+    for bookmaker in event.get("bookmakers", []):
+        for market in bookmaker.get("markets", []):
+            if market.get("key") != "h2h":
+                continue
+            odds = {}
+            for outcome in market.get("outcomes", []):
+                name = outcome.get("name")
+                price = outcome.get("price")
+                if name == home_name:
+                    odds["1"] = price
+                elif name == away_name:
+                    odds["2"] = price
+                elif isinstance(name, str) and name.lower() == "draw":
+                    odds["X"] = price
+            if odds:
+                return odds
+    return {}
 
 
-def fetch_team_form(session: requests.Session, headers: dict, team_id: int, league_id: int, season: int) -> str:
-    resp = session.get(
-        f"{RAPIDAPI_BASE_URL}/teams/statistics",
-        headers=headers,
-        params={"team": team_id, "league": league_id, "season": season},
-        timeout=15,
-    )
-    if not resp.ok:
-        print(f"UYARI: form alınamadı (team={team_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
-        return "?????"
-    form = resp.json().get("response", {}).get("form", "")
-    return form[-5:] if form else "?????"
-
-
-def fetch_h2h(session: requests.Session, headers: dict, home_id: int, away_id: int, home_name: str) -> str:
-    resp = session.get(
-        f"{RAPIDAPI_BASE_URL}/fixtures/headtohead",
-        headers=headers,
-        params={"h2h": f"{home_id}-{away_id}", "last": 5},
-        timeout=15,
-    )
-    if not resp.ok:
-        print(f"UYARI: H2H alınamadı ({home_id}-{away_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
-        return "veri yok"
-    results = []
-    for fixture in resp.json().get("response", []):
-        home_goals = fixture["goals"]["home"]
-        away_goals = fixture["goals"]["away"]
-        fixture_home = fixture["teams"]["home"]["name"]
-        if home_goals == away_goals:
-            results.append("X")
-        elif (home_goals > away_goals) == (fixture_home == home_name):
-            results.append("1")
-        else:
-            results.append("2")
-    return "-".join(results) if results else "veri yok"
-
-
-def current_season(today: datetime) -> int:
-    """Avrupa lig sezonları Temmuz-Mayıs arası sürer; sezon adı başlangıç yılıdır."""
-    return today.year if today.month >= 7 else today.year - 1
-
-
-def discover_fixtures(session: requests.Session, headers: dict, league_ids: dict,
-                       date_from: str, date_to: str, season: int) -> list:
-    """Verilen liglerde belirtilen tarih aralığındaki fikstürleri toplar, tarihe göre sıralar."""
-    fixtures = []
-    for league_id, league_name in league_ids.items():
+def discover_fixtures_with_odds(session: requests.Session, api_key: str, sport_keys: dict,
+                                 date_from: str, date_to: str) -> list:
+    """Verilen liglerde belirtilen tarih aralığındaki gerçek fikstürleri + gerçek oranları
+    the-odds-api.com'dan toplar, tarihe göre sıralar."""
+    matches = []
+    for sport_key, league_name in sport_keys.items():
         resp = session.get(
-            f"{RAPIDAPI_BASE_URL}/fixtures",
-            headers=headers,
-            params={"league": league_id, "season": season, "from": date_from, "to": date_to},
+            f"{ODDS_API_BASE_URL}/sports/{sport_key}/odds",
+            params={
+                "apiKey": api_key,
+                "regions": "eu,uk",
+                "markets": "h2h",
+                "oddsFormat": "decimal",
+                "dateFormat": "iso",
+                "commenceTimeFrom": date_from,
+                "commenceTimeTo": date_to,
+            },
             timeout=15,
         )
         if not resp.ok:
             print(
-                f"UYARI: {league_name} (id={league_id}) fikstürü alınamadı "
+                f"UYARI: {league_name} ({sport_key}) fikstürü alınamadı "
                 f"({resp.status_code}): {resp.text[:300]}",
                 file=sys.stderr,
             )
             continue
-        for item in resp.json().get("response", []):
-            fixtures.append({
-                "fixture_id": item["fixture"]["id"],
-                "kickoff": item["fixture"]["date"],
-                "league_id": league_id,
+        for event in resp.json():
+            matches.append({
+                "match_id": f"m{event['id']}",
                 "league": league_name,
-                "season": season,
-                "home_id": item["teams"]["home"]["id"],
-                "home_team": item["teams"]["home"]["name"],
-                "away_id": item["teams"]["away"]["id"],
-                "away_team": item["teams"]["away"]["name"],
+                "home_team": event["home_team"],
+                "away_team": event["away_team"],
+                "kickoff": event["commence_time"],
+                "odds": extract_1x2_odds(event),
+                # the-odds-api.com form/H2H sağlamıyor; dürüstçe "veri yok" gösterilir.
+                "home_form_last5": "veri yok",
+                "away_form_last5": "veri yok",
+                "h2h_last5": "veri yok",
             })
-    fixtures.sort(key=lambda f: f["kickoff"])
-    return fixtures
+    matches.sort(key=lambda m: m["kickoff"])
+    return matches
 
 
-def load_matches_from_api(rapidapi_key: str, fixtures_config: list | None = None) -> dict:
-    """fixtures_config verilmezse, önümüzdeki FIXTURE_WINDOW_DAYS gün içindeki gerçek
-    fikstürler LEAGUE_IDS listesindeki liglerden otomatik olarak keşfedilir (en erken
-    MAX_MATCHES maç seçilir). Manuel/özel bir seçim istenirse fixtures_config olarak
-    [{"fixture_id", "league_id", "season", "home_id", "away_id", "home_team", "away_team",
-    "league", "kickoff"}, ...] listesi geçilebilir."""
-    headers = {"x-rapidapi-key": rapidapi_key, "x-rapidapi-host": RAPIDAPI_HOST}
+def load_matches_from_api(odds_api_key: str) -> dict:
     session = requests.Session()
-
-    if fixtures_config is None:
-        today = datetime.now(timezone.utc)
-        date_from = today.strftime("%Y-%m-%d")
-        date_to = (today + timedelta(days=FIXTURE_WINDOW_DAYS)).strftime("%Y-%m-%d")
-        fixtures_config = discover_fixtures(
-            session, headers, LEAGUE_IDS, date_from, date_to, current_season(today)
-        )[:MAX_MATCHES]
-
-    matches = []
-    for cfg in fixtures_config:
-        odds = fetch_fixture_odds(session, headers, cfg["fixture_id"])
-        home_form = fetch_team_form(session, headers, cfg["home_id"], cfg["league_id"], cfg["season"])
-        away_form = fetch_team_form(session, headers, cfg["away_id"], cfg["league_id"], cfg["season"])
-        h2h = fetch_h2h(session, headers, cfg["home_id"], cfg["away_id"], cfg["home_team"])
-        matches.append({
-            "match_id": f"m{cfg['fixture_id']}",
-            "league": cfg["league"],
-            "home_team": cfg["home_team"],
-            "away_team": cfg["away_team"],
-            "kickoff": cfg["kickoff"],
-            "odds": odds,
-            "home_form_last5": home_form,
-            "away_form_last5": away_form,
-            "h2h_last5": h2h,
-        })
-    return {"week": datetime.now(timezone.utc).isoformat(), "matches": matches}
+    today = datetime.now(timezone.utc)
+    date_from = today.strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_to = (today + timedelta(days=FIXTURE_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    matches = discover_fixtures_with_odds(
+        session, odds_api_key, LEAGUE_SPORT_KEYS, date_from, date_to
+    )[:MAX_MATCHES]
+    return {"week": today.isoformat(), "matches": matches}
 
 
 def load_matches() -> dict:
-    rapidapi_key = os.environ.get("RAPIDAPI_KEY")
-    if rapidapi_key:
-        fixtures_config = None
-        fixtures_config_path = os.environ.get("FIXTURES_CONFIG")
-        if fixtures_config_path and os.path.exists(fixtures_config_path):
-            with open(fixtures_config_path, "r", encoding="utf-8") as f:
-                fixtures_config = json.load(f)
-        bulletin = load_matches_from_api(rapidapi_key, fixtures_config)
+    odds_api_key = os.environ.get("ODDS_API_KEY")
+    if odds_api_key:
+        bulletin = load_matches_from_api(odds_api_key)
         if bulletin["matches"]:
             return bulletin
-        print("UYARI: API-Football'dan maç bulunamadı, matches.json şablonuna dönülüyor.", file=sys.stderr)
+        print("UYARI: The Odds API'den maç bulunamadı, matches.json şablonuna dönülüyor.", file=sys.stderr)
     return load_matches_from_file(MATCHES_FILE)
 
 
@@ -255,12 +190,13 @@ PREDICTION_SCHEMA = {
 }
 
 SYSTEM_PROMPT = (
-    "Sen bir futbol istatistik analistisin. Sana verilen maçlar için oranlara, "
-    "son 5 maçlık form durumuna ve H2H (head-to-head) geçmişine dayanarak "
-    "MS 1X2 tercihi (1, X, 2, 1X, X2 veya 12) öner. Yorumların kısa (en fazla "
-    "2 cümle), somut istatistiklere dayalı ve net olsun. Spekülasyon yapma, "
+    "Sen bir futbol istatistik analistisin. Sana verilen maçlar için oranlara, ve "
+    "varsa son 5 maçlık form durumuna ve H2H (head-to-head) geçmişine dayanarak "
+    "MS 1X2 tercihi (1, X, 2, 1X, X2 veya 12) öner. form/h2h alanları 'veri yok' ise "
+    "bunları uydurma, sadece oranlara dayalı bir değerlendirme yap. Yorumların kısa "
+    "(en fazla 2 cümle), somut verilere dayalı ve net olsun. Spekülasyon yapma, "
     "sadece verilen verilerdeki gerekçelere atıf yap. confidence 1-10 arası, "
-    "10 en yüksek güven."
+    "10 en yüksek güven; veri az olduğunda güveni düşük tut."
 )
 
 
