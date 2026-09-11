@@ -56,7 +56,9 @@ def fetch_fixture_odds(session: requests.Session, headers: dict, fixture_id: int
         params={"fixture": fixture_id},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"UYARI: oran alınamadı (fixture={fixture_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
+        return {}
     data = resp.json().get("response", [])
     if not data:
         return {}
@@ -77,7 +79,9 @@ def fetch_team_form(session: requests.Session, headers: dict, team_id: int, leag
         params={"team": team_id, "league": league_id, "season": season},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"UYARI: form alınamadı (team={team_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
+        return "?????"
     form = resp.json().get("response", {}).get("form", "")
     return form[-5:] if form else "?????"
 
@@ -89,7 +93,9 @@ def fetch_h2h(session: requests.Session, headers: dict, home_id: int, away_id: i
         params={"h2h": f"{home_id}-{away_id}", "last": 5},
         timeout=15,
     )
-    resp.raise_for_status()
+    if not resp.ok:
+        print(f"UYARI: H2H alınamadı ({home_id}-{away_id}, {resp.status_code}): {resp.text[:200]}", file=sys.stderr)
+        return "veri yok"
     results = []
     for fixture in resp.json().get("response", []):
         home_goals = fixture["goals"]["home"]
@@ -120,7 +126,13 @@ def discover_fixtures(session: requests.Session, headers: dict, league_ids: dict
             params={"league": league_id, "season": season, "from": date_from, "to": date_to},
             timeout=15,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            print(
+                f"UYARI: {league_name} (id={league_id}) fikstürü alınamadı "
+                f"({resp.status_code}): {resp.text[:300]}",
+                file=sys.stderr,
+            )
+            continue
         for item in resp.json().get("response", []):
             fixtures.append({
                 "fixture_id": item["fixture"]["id"],
