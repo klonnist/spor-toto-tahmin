@@ -10,7 +10,7 @@ Akış:
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import requests
 from google import genai
@@ -25,6 +25,19 @@ RAPIDAPI_HOST = "api-football-v1.p.rapidapi.com"
 RAPIDAPI_BASE_URL = f"https://{RAPIDAPI_HOST}/v3"
 
 VALID_PREDICTIONS = {"1", "X", "2", "1X", "X2", "12"}
+
+# API-Football lig ID'leri (bu liglerin fikstürleri otomatik taranır).
+# Bir lig sürekli boş sonuç veriyorsa ID'yi /leagues?name=... ile doğrulayın.
+LEAGUE_IDS = {
+    203: "Süper Lig",
+    39: "Premier League",
+    140: "La Liga",
+    135: "Serie A",
+    78: "Bundesliga",
+    61: "Ligue 1",
+}
+MAX_MATCHES = int(os.environ.get("MAX_MATCHES", "15"))
+FIXTURE_WINDOW_DAYS = int(os.environ.get("FIXTURE_WINDOW_DAYS", "7"))
 
 
 # ---------------------------------------------------------------------------
@@ -91,12 +104,56 @@ def fetch_h2h(session: requests.Session, headers: dict, home_id: int, away_id: i
     return "-".join(results) if results else "veri yok"
 
 
-def load_matches_from_api(rapidapi_key: str, fixtures_config: list) -> dict:
-    """fixtures_config: [{"fixture_id", "league_id", "season", "home_id", "away_id",
-    "home_team", "away_team", "league", "kickoff"}, ...] - dış kaynaktan (ör. bir config
-    dosyasından) sağlanmalıdır; API-Football fixture aramasını burada yapmıyoruz."""
+def current_season(today: datetime) -> int:
+    """Avrupa lig sezonları Temmuz-Mayıs arası sürer; sezon adı başlangıç yılıdır."""
+    return today.year if today.month >= 7 else today.year - 1
+
+
+def discover_fixtures(session: requests.Session, headers: dict, league_ids: dict,
+                       date_from: str, date_to: str, season: int) -> list:
+    """Verilen liglerde belirtilen tarih aralığındaki fikstürleri toplar, tarihe göre sıralar."""
+    fixtures = []
+    for league_id, league_name in league_ids.items():
+        resp = session.get(
+            f"{RAPIDAPI_BASE_URL}/fixtures",
+            headers=headers,
+            params={"league": league_id, "season": season, "from": date_from, "to": date_to},
+            timeout=15,
+        )
+        resp.raise_for_status()
+        for item in resp.json().get("response", []):
+            fixtures.append({
+                "fixture_id": item["fixture"]["id"],
+                "kickoff": item["fixture"]["date"],
+                "league_id": league_id,
+                "league": league_name,
+                "season": season,
+                "home_id": item["teams"]["home"]["id"],
+                "home_team": item["teams"]["home"]["name"],
+                "away_id": item["teams"]["away"]["id"],
+                "away_team": item["teams"]["away"]["name"],
+            })
+    fixtures.sort(key=lambda f: f["kickoff"])
+    return fixtures
+
+
+def load_matches_from_api(rapidapi_key: str, fixtures_config: list | None = None) -> dict:
+    """fixtures_config verilmezse, önümüzdeki FIXTURE_WINDOW_DAYS gün içindeki gerçek
+    fikstürler LEAGUE_IDS listesindeki liglerden otomatik olarak keşfedilir (en erken
+    MAX_MATCHES maç seçilir). Manuel/özel bir seçim istenirse fixtures_config olarak
+    [{"fixture_id", "league_id", "season", "home_id", "away_id", "home_team", "away_team",
+    "league", "kickoff"}, ...] listesi geçilebilir."""
     headers = {"x-rapidapi-key": rapidapi_key, "x-rapidapi-host": RAPIDAPI_HOST}
     session = requests.Session()
+
+    if fixtures_config is None:
+        today = datetime.now(timezone.utc)
+        date_from = today.strftime("%Y-%m-%d")
+        date_to = (today + timedelta(days=FIXTURE_WINDOW_DAYS)).strftime("%Y-%m-%d")
+        fixtures_config = discover_fixtures(
+            session, headers, LEAGUE_IDS, date_from, date_to, current_season(today)
+        )[:MAX_MATCHES]
+
     matches = []
     for cfg in fixtures_config:
         odds = fetch_fixture_odds(session, headers, cfg["fixture_id"])
@@ -119,11 +176,16 @@ def load_matches_from_api(rapidapi_key: str, fixtures_config: list) -> dict:
 
 def load_matches() -> dict:
     rapidapi_key = os.environ.get("RAPIDAPI_KEY")
-    fixtures_config_path = os.environ.get("FIXTURES_CONFIG")
-    if rapidapi_key and fixtures_config_path and os.path.exists(fixtures_config_path):
-        with open(fixtures_config_path, "r", encoding="utf-8") as f:
-            fixtures_config = json.load(f)
-        return load_matches_from_api(rapidapi_key, fixtures_config)
+    if rapidapi_key:
+        fixtures_config = None
+        fixtures_config_path = os.environ.get("FIXTURES_CONFIG")
+        if fixtures_config_path and os.path.exists(fixtures_config_path):
+            with open(fixtures_config_path, "r", encoding="utf-8") as f:
+                fixtures_config = json.load(f)
+        bulletin = load_matches_from_api(rapidapi_key, fixtures_config)
+        if bulletin["matches"]:
+            return bulletin
+        print("UYARI: API-Football'dan maç bulunamadı, matches.json şablonuna dönülüyor.", file=sys.stderr)
     return load_matches_from_file(MATCHES_FILE)
 
 
