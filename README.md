@@ -47,33 +47,44 @@ fikstürleri, doğru tarihleri ve gerçek bahis oranlarını görmek için
 1. https://the-odds-api.com adresine gidip **Get API Key** ile ücretsiz kaydolun
    (kredi kartı istemez, key e-postanıza gelir).
 2. Ücretsiz plan: **ayda 500 kredi**, `h2h` (1X2) pazarı dahil — 15 maçlık haftalık bir
-   bülten için fazlasıyla yeterli (her lig sorgusu 1 kredi harcar; `main.py` haftada
-   6 lig sorgular).
-3. `ODDS_API_KEY` secret'i tanımlıysa `main.py`, `main.py` içindeki `LEAGUE_SPORT_KEYS`
-   listesindeki liglerin (Süper Lig, Premier League, La Liga, Serie A, Bundesliga,
-   Ligue 1) önümüzdeki `FIXTURE_WINDOW_DAYS` (varsayılan 7) gün içindeki gerçek
-   fikstürlerini ve gerçek 1X2 oranlarını otomatik çeker, en erken `MAX_MATCHES`
-   (varsayılan 15) tanesini bültene koyar.
+   bülten için fazlasıyla yeterli.
+3. `ODDS_API_KEY` secret'i tanımlıysa `main.py`, Süper Lig'in (ve `FOOTBALL_DATA_API_KEY`
+   yoksa diğer 5 büyük ligin) önümüzdeki `FIXTURE_WINDOW_DAYS` (varsayılan 7) gün
+   içindeki gerçek fikstürlerini ve gerçek 1X2 oranlarını otomatik çeker.
 
-> The Odds API form/H2H istatistiği sağlamıyor — bu alanlar sitede "veri yok" olarak
-> görünür ve Gemini yorumlarını sadece oranlara dayandırır. `ODDS_API_KEY` tanımlı
-> değilse, ya da o hafta hiç maç bulunamazsa, script otomatik olarak `matches.json`
-> şablonuna döner (site boş kalmasın diye).
+## 3. football-data.org Key Alma (ücretsiz) — gerçek form ve H2H istatistiği için
 
-## 3. GitHub Secrets Ayarları
+The Odds API form/H2H sağlamıyor. Bu yüzden Premier League, La Liga, Serie A, Bundesliga
+ve Ligue 1 maçları için gerçek **son 5 maç formu** ve **H2H geçmişi**
+[football-data.org](https://www.football-data.org)'dan zenginleştirilir (Süper Lig bu
+API'nin ücretsiz planında yok, o yüzden Süper Lig'de form/H2H hâlâ "veri yok" görünür):
+
+1. https://www.football-data.org/client/register adresinden ücretsiz kaydolun (kredi
+   kartı istemez).
+2. Kayıt sonrası e-postanıza gelen ya da hesabınızdaki **X-Auth-Token** anahtarını alın.
+3. Ücretsiz plan: **10 istek/dakika**. `main.py` bu limite uymak için istekler arasına
+   otomatik ~6.5 saniye bekleme koyar; bu yüzden gerçek veri çekme adımı birkaç dakika
+   sürebilir (normaldir, workflow zaman aşımı 15 dakikaya ayarlıdır). Lig başına kaç
+   maçın zenginleştirileceğini `FD_MATCHES_PER_LEAGUE` (varsayılan 2) ile
+   ayarlayabilirsiniz — yükseltirseniz süre ve istek sayısı artar.
+4. `FOOTBALL_DATA_API_KEY` secret'i tanımlı değilse, bu 5 lig de sadece The Odds API'den
+   (form/H2H olmadan) çekilir; sistem çökmez, sadece zenginleştirme atlanır.
+
+## 4. GitHub Secrets Ayarları
 
 Reponuzda:
 
 1. **Settings → Secrets and variables → Actions** sekmesine gidin.
 2. **New repository secret** ile aşağıdakileri ekleyin:
    - `GEMINI_API_KEY` → Google AI Studio'dan aldığınız ücretsiz anahtar
-   - `ODDS_API_KEY` → (opsiyonel ama önerilir) the-odds-api.com'dan aldığınız ücretsiz anahtar
+   - `ODDS_API_KEY` → (önerilir) the-odds-api.com'dan aldığınız ücretsiz anahtar
+   - `FOOTBALL_DATA_API_KEY` → (opsiyonel, form/H2H zenginleştirmesi için) football-data.org'dan aldığınız ücretsiz anahtar
 3. Workflow, `GITHUB_TOKEN`'ı otomatik sağlar; ek bir işlem gerekmez, ancak
    **Settings → Actions → General → Workflow permissions** altında
    **Read and write permissions** seçili olmalıdır (gh-pages branch'ine push
    yapabilmesi için).
 
-## 4. GitHub Pages Ayarı
+## 5. GitHub Pages Ayarı
 
 1. İlk workflow çalışmasından sonra `gh-pages` branch'i otomatik oluşur.
 2. **Settings → Pages** sekmesine gidip **Source** olarak `gh-pages` branch'ini,
@@ -81,7 +92,7 @@ Reponuzda:
 3. Siteniz birkaç dakika içinde `https://<kullanıcı-adiniz>.github.io/<repo-adi>/`
    adresinde yayında olur.
 
-## 5. Workflow'u Çalıştırma
+## 6. Workflow'u Çalıştırma
 
 - **Manuel**: Repo → **Actions** → *Generate Spor Toto Predictions* → **Run workflow**.
 - **Otomatik**: `matches.json` dosyasını güncelleyip `master` branch'ine push ettiğinizde,
