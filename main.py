@@ -10,6 +10,7 @@ Akış:
 import json
 import os
 import sys
+import time
 from datetime import datetime, timedelta, timezone
 
 import requests
@@ -263,21 +264,32 @@ SYSTEM_PROMPT = (
 )
 
 
-def get_predictions(client: genai.Client, compact_matches: list) -> dict:
-    response = client.models.generate_content(
-        model=MODEL_ID,
-        contents=(
-            "Aşağıdaki maçlar için tahmin üret:\n\n"
-            + json.dumps(compact_matches, ensure_ascii=False)
-        ),
-        config=types.GenerateContentConfig(
-            system_instruction=SYSTEM_PROMPT,
-            response_mime_type="application/json",
-            response_json_schema=PREDICTION_SCHEMA,
-        ),
-    )
-    data = json.loads(response.text)
-    return {p["match_id"]: p for p in data["predictions"]}
+def get_predictions(client: genai.Client, compact_matches: list, max_retries: int = 3) -> dict:
+    last_error = None
+    for attempt in range(max_retries):
+        if attempt > 0:
+            delay = 2 ** attempt
+            print(f"UYARI: Gemini geçici hata verdi, {delay}s sonra tekrar denenecek "
+                  f"({attempt}/{max_retries - 1}).", file=sys.stderr)
+            time.sleep(delay)
+        try:
+            response = client.models.generate_content(
+                model=MODEL_ID,
+                contents=(
+                    "Aşağıdaki maçlar için tahmin üret:\n\n"
+                    + json.dumps(compact_matches, ensure_ascii=False)
+                ),
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    response_mime_type="application/json",
+                    response_json_schema=PREDICTION_SCHEMA,
+                ),
+            )
+            data = json.loads(response.text)
+            return {p["match_id"]: p for p in data["predictions"]}
+        except genai_errors.ServerError as e:
+            last_error = e
+    raise last_error
 
 
 # ---------------------------------------------------------------------------
