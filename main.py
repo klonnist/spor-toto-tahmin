@@ -3,7 +3,7 @@
 Akış:
   1. Maç verisini oku (matches.json ya da API-Football/RapidAPI)
   2. Kompakt istatistik JSON'u hazırla (token tasarrufu için)
-  3. GitHub Models'dan (gpt-4o-mini) structured output ile tahmin al
+  3. Google Gemini'den (ücretsiz katman) structured output ile tahmin al
   4. index.html olarak render et
 """
 
@@ -12,12 +12,12 @@ import os
 import sys
 from datetime import datetime, timezone
 
-import openai
 import requests
-from openai import OpenAI
+from google import genai
+from google.genai import errors as genai_errors
+from google.genai import types
 
-MODEL_ID = "gpt-4o-mini"
-GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
+MODEL_ID = "gemini-2.5-flash"
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
@@ -147,7 +147,7 @@ def build_compact_payload(bulletin: dict) -> list:
 
 
 # ---------------------------------------------------------------------------
-# 3. GitHub Models (gpt-4o-mini) ile tahmin üretimi (structured output)
+# 3. Google Gemini ile tahmin üretimi (structured output)
 # ---------------------------------------------------------------------------
 
 PREDICTION_SCHEMA = {
@@ -189,31 +189,20 @@ SYSTEM_PROMPT = (
 )
 
 
-def get_predictions(client: OpenAI, compact_matches: list) -> dict:
-    response = client.chat.completions.create(
+def get_predictions(client: genai.Client, compact_matches: list) -> dict:
+    response = client.models.generate_content(
         model=MODEL_ID,
-        max_tokens=4096,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    "Aşağıdaki maçlar için tahmin üret:\n\n"
-                    + json.dumps(compact_matches, ensure_ascii=False)
-                ),
-            },
-        ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "predictions_response",
-                "schema": PREDICTION_SCHEMA,
-                "strict": True,
-            },
-        },
+        contents=(
+            "Aşağıdaki maçlar için tahmin üret:\n\n"
+            + json.dumps(compact_matches, ensure_ascii=False)
+        ),
+        config=types.GenerateContentConfig(
+            system_instruction=SYSTEM_PROMPT,
+            response_mime_type="application/json",
+            response_json_schema=PREDICTION_SCHEMA,
+        ),
     )
-    text = response.choices[0].message.content
-    data = json.loads(text)
+    data = json.loads(response.text)
     return {p["match_id"]: p for p in data["predictions"]}
 
 
@@ -303,7 +292,7 @@ def render_html(bulletin: dict, predictions: dict) -> str:
     </div>
   </main>
   <footer class="text-center text-slate-600 text-xs py-8">
-    GitHub Models ({MODEL_ID}) ile üretildi · Sorumlu oyun oynayın.
+    Google Gemini ({MODEL_ID}) ile üretildi · Sorumlu oyun oynayın.
   </footer>
 </body>
 </html>
@@ -315,9 +304,9 @@ def render_html(bulletin: dict, predictions: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    github_token = os.environ.get("GITHUB_TOKEN")
-    if not github_token:
-        print("HATA: GITHUB_TOKEN ortam değişkeni tanımlı değil.", file=sys.stderr)
+    gemini_api_key = os.environ.get("GEMINI_API_KEY")
+    if not gemini_api_key:
+        print("HATA: GEMINI_API_KEY ortam değişkeni tanımlı değil.", file=sys.stderr)
         return 1
 
     bulletin = load_matches()
@@ -326,15 +315,12 @@ def main() -> int:
         return 1
 
     compact_matches = build_compact_payload(bulletin)
-    client = OpenAI(base_url=GITHUB_MODELS_BASE_URL, api_key=github_token)
+    client = genai.Client(api_key=gemini_api_key)
 
     try:
         predictions = get_predictions(client, compact_matches)
-    except openai.APIStatusError as e:
-        print(f"HATA: GitHub Models isteği başarısız oldu ({e.status_code}): {e.message}", file=sys.stderr)
-        return 1
-    except openai.APIConnectionError as e:
-        print(f"HATA: GitHub Models bağlantı hatası: {e}", file=sys.stderr)
+    except genai_errors.APIError as e:
+        print(f"HATA: Gemini API isteği başarısız oldu ({e.code}): {e.message}", file=sys.stderr)
         return 1
 
     html = render_html(bulletin, predictions)

@@ -1,14 +1,18 @@
 # Spor Toto Haftalık Tahmin Botu
 
-Claude (`claude-haiku-4-5`) ile 15 maçlık bültenler için haftalık, istatistiksel gerekçeli
-tahminler üreten ve sonucu GitHub Pages üzerinde statik bir sitede yayınlayan proje.
+Google Gemini (`gemini-2.5-flash`, ücretsiz katman) ile 15 maçlık bültenler için haftalık,
+istatistiksel gerekçeli tahminler üreten ve sonucu GitHub Pages üzerinde statik bir sitede
+yayınlayan proje.
 
-> Not: İstenen `claude-3-5-haiku` modeli 19 Şubat 2026'da kullanımdan kaldırıldı (retired).
-> Onun yerine aynı sınıftaki (hızlı/ucuz) güncel model olan **`claude-haiku-4-5`** kullanıldı.
+> Not: Proje başlangıçta Claude, ardından GitHub Models (`gpt-4o-mini`) ile denendi.
+> GitHub Models servisi kullanımdan kaldırılma sürecinde olduğu (retirement brownout)
+> için isteklerin tamamı başarısız oluyordu; bu yüzden ücretsiz ve kalıcı bir seçenek olan
+> **Google Gemini**'ye geçildi. Hâlâ tek bir `GEMINI_API_KEY` secret'i gerekir, ama bu
+> anahtar Google AI Studio'dan kredi kartı istenmeden ücretsiz alınabilir.
 
 ## Dosyalar
 
-- `main.py` — veri okuma, Claude'a istek, `index.html` üretimi
+- `main.py` — veri okuma, Gemini'ye istek, `index.html` üretimi
 - `matches.json` — örnek 15 maçlık bülten şablonu
 - `.github/workflows/generate_predictions.yml` — otomasyon
 - `requirements.txt` — Python bağımlılıkları
@@ -17,21 +21,22 @@ tahminler üreten ve sonucu GitHub Pages üzerinde statik bir sitede yayınlayan
 
 ```bash
 pip install -r requirements.txt
-export ANTHROPIC_API_KEY="sk-ant-..."
+export GEMINI_API_KEY="AIza..."
 python main.py
 ```
 
 Bu komut `matches.json` dosyasını okuyup `index.html` üretir. Tarayıcıda `index.html`
 dosyasını açarak sonucu görebilirsiniz.
 
-## 1. Anthropic API Key Alma
+## 1. Google Gemini API Key Alma (ücretsiz)
 
-1. https://console.anthropic.com adresine gidin ve giriş yapın / hesap oluşturun.
-2. Sol menüden **API Keys** sekmesine girin.
-3. **Create Key** butonuna basıp anahtara bir isim verin (örn. `spor-toto-actions`).
-4. Oluşan `sk-ant-...` anahtarını kopyalayın — bir daha tam haliyle gösterilmez.
-5. Hesabınıza kredi kartı ekleyip kullanım limiti/bütçe tanımlamayı unutmayın
-   (Settings → Billing).
+1. https://aistudio.google.com/apikey adresine gidin ve Google hesabınızla giriş yapın.
+2. **Create API key** butonuna basın (yeni bir proje seçebilir ya da var olanı
+   kullanabilirsiniz).
+3. Oluşan `AIza...` ile başlayan anahtarı kopyalayın.
+4. Kredi kartı gerekmez; ücretsiz katmanın günlük/dakikalık istek limitleri vardır
+   (güncel limitler için Google AI Studio'daki **Rate limits** sayfasına bakın) — 15
+   maçlık haftalık bir bülten bu limitlerin çok altında kalır.
 
 ## 2. RapidAPI Key Alma (API-Football)
 
@@ -59,7 +64,7 @@ Reponuzda:
 
 1. **Settings → Secrets and variables → Actions** sekmesine gidin.
 2. **New repository secret** ile aşağıdakileri ekleyin:
-   - `ANTHROPIC_API_KEY` → Anthropic Console'dan aldığınız anahtar
+   - `GEMINI_API_KEY` → Google AI Studio'dan aldığınız ücretsiz anahtar
    - `RAPIDAPI_KEY` → (opsiyonel) RapidAPI'dan aldığınız anahtar
 3. Workflow, `GITHUB_TOKEN`'ı otomatik sağlar; ek bir işlem gerekmez, ancak
    **Settings → Actions → General → Workflow permissions** altında
@@ -77,7 +82,7 @@ Reponuzda:
 ## 5. Workflow'u Çalıştırma
 
 - **Manuel**: Repo → **Actions** → *Generate Spor Toto Predictions* → **Run workflow**.
-- **Otomatik**: `matches.json` dosyasını güncelleyip `main` branch'ine push ettiğinizde,
+- **Otomatik**: `matches.json` dosyasını güncelleyip `master` branch'ine push ettiğinizde,
   ya da her Pazartesi 06:00 UTC'de (cron) otomatik tetiklenir.
 
 ## Sorumluluk Reddi
