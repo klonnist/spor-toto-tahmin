@@ -1,6 +1,6 @@
 # Spor Toto Haftalık Tahmin Botu
 
-Google Gemini (`gemini-2.5-flash`, ücretsiz katman) ile 15 maçlık bültenler için haftalık,
+Google Gemini (`gemini-3.6-flash`, ücretsiz katman) ile 15 maçlık bültenler için haftalık,
 istatistiksel gerekçeli tahminler üreten ve sonucu GitHub Pages üzerinde statik bir sitede
 yayınlayan proje.
 

@@ -17,7 +17,7 @@ from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types
 
-MODEL_ID = "gemini-2.5-flash"
+MODEL_ID = "gemini-3.6-flash"
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
