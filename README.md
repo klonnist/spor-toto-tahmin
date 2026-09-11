@@ -98,9 +98,9 @@ hâlâ "veri yok" görünür):
    kartı istemez).
 2. Kayıt sonrası e-postanıza gelen ya da hesabınızdaki **X-Auth-Token** anahtarını alın.
 3. Ücretsiz plan: **10 istek/dakika**. `main.py` bu limite uymak için istekler arasına
-   otomatik ~6.5 saniye bekleme koyar; bu yüzden bu adım (kaç maç eşleşirse o kadar
-   sürer, tipik olarak 2-4 dakika) normaldir — workflow zaman aşımı 15 dakikaya
-   ayarlıdır.
+   otomatik ~7.5 saniye bekleme koyar (429 alınırsa bir kez daha dener); bu yüzden bu
+   adım (kaç maç eşleşirse o kadar sürer, tipik olarak 2-4 dakika) normaldir — workflow
+   zaman aşımı 20 dakikaya ayarlıdır.
 4. `FOOTBALL_DATA_API_KEY` secret'i tanımlı değilse, bu 5 lige denk gelen maçlar da
    sadece The Odds API'den (form/H2H olmadan) gösterilir; sistem çökmez, sadece
    zenginleştirme atlanır.

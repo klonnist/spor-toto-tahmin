@@ -38,7 +38,7 @@ SPOR_TOTO_URL = "https://www.sportoto.gov.tr/spor-toto-listeler"
 
 ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4"
 FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
-FOOTBALL_DATA_RATE_LIMIT_DELAY = 6.5  # saniye; ücretsiz plan 10 istek/dk
+FOOTBALL_DATA_RATE_LIMIT_DELAY = 7.5  # saniye; ücretsiz plan 10 istek/dk (pay bırakıldı)
 
 # the-odds-api.com sport key -> görünen ad. Spor Toto kuponu genelde Süper Lig +
 # büyük Avrupa ligleri + kupalardan (Şampiyonlar Ligi, EFL Cup vb.) oluşur; resmi
@@ -176,17 +176,24 @@ def names_roughly_match(a: str, b: str) -> bool:
 
 
 def fetch_fd(session: requests.Session, headers: dict, path: str, params: dict | None = None) -> dict | None:
-    try:
-        resp = session.get(f"{FOOTBALL_DATA_BASE_URL}{path}", headers=headers, params=params, timeout=15)
-    except requests.RequestException as e:
-        print(f"UYARI: football-data.org isteği başarısız ({path}): {e}", file=sys.stderr)
-        return None
-    finally:
+    for attempt in range(2):  # 429 alınırsa bir kez daha dene
+        try:
+            resp = session.get(f"{FOOTBALL_DATA_BASE_URL}{path}", headers=headers, params=params, timeout=15)
+        except requests.RequestException as e:
+            print(f"UYARI: football-data.org isteği başarısız ({path}): {e}", file=sys.stderr)
+            time.sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY)
+            return None
+        if resp.status_code == 429 and attempt == 0:
+            print(f"UYARI: football-data.org {path} -> 429, {FOOTBALL_DATA_RATE_LIMIT_DELAY * 2}s bekleyip "
+                  f"tekrar denenecek.", file=sys.stderr)
+            time.sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY * 2)
+            continue
         time.sleep(FOOTBALL_DATA_RATE_LIMIT_DELAY)
-    if not resp.ok:
-        print(f"UYARI: football-data.org {path} -> {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
-        return None
-    return resp.json()
+        if not resp.ok:
+            print(f"UYARI: football-data.org {path} -> {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
+            return None
+        return resp.json()
+    return None
 
 
 def fetch_fd_competition_teams(session: requests.Session, headers: dict, code: str) -> dict:
