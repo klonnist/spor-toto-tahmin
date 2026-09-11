@@ -6,6 +6,7 @@ on:
     branches: [master]
     paths:
       - "matches.json"
+      - "official_matches.json"
   schedule:
     # Her Pazartesi 06:00 UTC (TR saatiyle 09:00)
     - cron: "0 6 * * 1"

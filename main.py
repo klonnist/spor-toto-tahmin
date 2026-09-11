@@ -2,11 +2,16 @@
 
 Akış:
   1. Maç verisini oku:
-     - Süper Lig: the-odds-api.com (gerçek fikstür + gerçek oran; form/H2H yok)
-     - Premier League/La Liga/Serie A/Bundesliga/Ligue 1: football-data.org (gerçek
-       fikstür + gerçek form/H2H) zenginleştirilip the-odds-api.com'dan eşlenen oranla
-       birleştirilir
-     - Hiçbiri yoksa/başarısız olursa matches.json şablonu
+     - Resmi 15 maçlık liste `official_matches.json` dosyasından okunur (bu dosya
+       sportoto.gov.tr/spor-toto-listeler adresinden elle ya da bir ekran
+       görüntüsünden haftalık olarak güncellenir - bkz. README; site otomatik
+       isteklere [curl/requests, Playwright headless dahil] boş tablo döndürerek
+       bot koruması uyguluyor, bu yüzden otomatik kazıma yapılmıyor).
+     - Her maç için the-odds-api.com'da takım adı eşleştirmesiyle gerçek 1X2 oranı
+       ve hangi ligde/kupada oynandığı bulunur.
+     - Eşleşen lig football-data.org'un ücretsiz kapsamındaysa (PL/La Liga/Serie A/
+       Bundesliga/Ligue 1) gerçek son-5 form ve H2H geçmişi de eklenir.
+     - `official_matches.json` yoksa/boşsa matches.json şablonuna dönülür.
   2. Kompakt istatistik JSON'u hazırla (token tasarrufu için)
   3. Google Gemini'den (ücretsiz katman) structured output ile tahmin al
   4. index.html olarak render et
@@ -29,27 +34,46 @@ FALLBACK_MODEL_ID = "gemini-flash-latest"  # birincisi sürekli 503 verirse buna
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
+SPOR_TOTO_URL = "https://www.sportoto.gov.tr/spor-toto-listeler"
+
 ODDS_API_BASE_URL = "https://api.the-odds-api.com/v4"
 FOOTBALL_DATA_BASE_URL = "https://api.football-data.org/v4"
 FOOTBALL_DATA_RATE_LIMIT_DELAY = 6.5  # saniye; ücretsiz plan 10 istek/dk
 
-# the-odds-api.com sport key'leri (https://the-odds-api.com/sports-odds-data/sports-apis.html
-# adresinden doğrulanmıştır).
-SUPER_LIG_SPORT_KEY = "soccer_turkey_super_league"  # football-data.org ücretsiz planda yok
-
-# football-data.org rekabet kodu -> (görünen lig adı, the-odds-api sport key).
-# football-data.org ücretsiz planı bu 5 ligi (+ birkaç kupa) kapsar; form/H2H bunlardan gelir.
-FOOTBALL_DATA_COMPETITIONS = {
-    "PL": ("Premier League", "soccer_epl"),
-    "PD": ("La Liga", "soccer_spain_la_liga"),
-    "SA": ("Serie A", "soccer_italy_serie_a"),
-    "BL1": ("Bundesliga", "soccer_germany_bundesliga"),
-    "FL1": ("Ligue 1", "soccer_france_ligue_one"),
+# the-odds-api.com sport key -> görünen ad. Spor Toto kuponu genelde Süper Lig +
+# büyük Avrupa ligleri + kupalardan (Şampiyonlar Ligi, EFL Cup vb.) oluşur; resmi
+# listedeki her maçın hangi organizasyona ait olduğunu bulmak için bunların hepsi
+# taranır (https://the-odds-api.com/sports-odds-data/sports-apis.html'den doğrulandı).
+ODDS_SEARCH_LEAGUES = {
+    "soccer_turkey_super_league": "Süper Lig",
+    "soccer_epl": "Premier League",
+    "soccer_efl_champ": "Championship",
+    "soccer_england_efl_cup": "EFL Cup",
+    "soccer_spain_la_liga": "La Liga",
+    "soccer_spain_copa_del_rey": "Copa del Rey",
+    "soccer_italy_serie_a": "Serie A",
+    "soccer_italy_coppa_italia": "Coppa Italia",
+    "soccer_germany_bundesliga": "Bundesliga",
+    "soccer_germany_dfb_pokal": "DFB-Pokal",
+    "soccer_france_ligue_one": "Ligue 1",
+    "soccer_france_coupe_de_france": "Coupe de France",
+    "soccer_uefa_champs_league": "Şampiyonlar Ligi",
+    "soccer_uefa_europa_league": "Avrupa Ligi",
+    "soccer_uefa_europa_conference_league": "Konferans Ligi",
 }
-FD_MATCHES_PER_LEAGUE = int(os.environ.get("FD_MATCHES_PER_LEAGUE", "2"))
 
-MAX_MATCHES = int(os.environ.get("MAX_MATCHES", "15"))
-FIXTURE_WINDOW_DAYS = int(os.environ.get("FIXTURE_WINDOW_DAYS", "7"))
+# the-odds-api sport key -> football-data.org rekabet kodu. Sadece football-data.org'un
+# ücretsiz planında olan 5 büyük lig için form/H2H zenginleştirmesi yapılabilir.
+ODDS_KEY_TO_FD_CODE = {
+    "soccer_epl": "PL",
+    "soccer_spain_la_liga": "PD",
+    "soccer_italy_serie_a": "SA",
+    "soccer_germany_bundesliga": "BL1",
+    "soccer_france_ligue_one": "FL1",
+}
+
+ODDS_SEARCH_WINDOW_DAYS = int(os.environ.get("ODDS_SEARCH_WINDOW_DAYS", "10"))
+FD_H2H_HISTORY_LIMIT = int(os.environ.get("FD_H2H_HISTORY_LIMIT", "50"))
 
 VALID_PREDICTIONS = {"1", "X", "2", "1X", "X2", "12"}
 
@@ -61,6 +85,25 @@ VALID_PREDICTIONS = {"1", "X", "2", "1X", "X2", "12"}
 def load_matches_from_file(path: str) -> dict:
     with open(path, "r", encoding="utf-8") as f:
         return json.load(f)
+
+
+OFFICIAL_MATCHES_FILE = os.environ.get("OFFICIAL_MATCHES_FILE", "official_matches.json")
+
+
+def load_official_spor_toto_fixtures(path: str) -> tuple[list, str | None]:
+    """sportoto.gov.tr'nin resmi haftalık 15 maçlık listesini bu dosyadan okur.
+
+    sportoto.gov.tr, veriyi düz HTTP isteklerine (curl/requests, Playwright headless
+    tarayıcı dahil) boş bir tablo döndürerek bot korumasıyla veriyor - otomatik
+    kazıma bu korumayı aşmayı gerektireceği için yapılmıyor. Bunun yerine haftalık
+    listeyi (takım + tarih/saat) sportoto.gov.tr/spor-toto-listeler adresinden elle
+    ya da bir ekran görüntüsünden bu dosyaya aktarmanız gerekir - format için
+    README'ye bakın."""
+    if not os.path.exists(path):
+        return [], None
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    return data.get("matches", []), data.get("week")
 
 
 def extract_1x2_odds(event: dict) -> dict:
@@ -105,34 +148,12 @@ def fetch_odds_events(session: requests.Session, api_key: str, sport_key: str,
     )
     if not resp.ok:
         print(
-            f"UYARI: {league_name} ({sport_key}) oran/fikstür alınamadı "
+            f"UYARI: {league_name} ({sport_key}) oran alınamadı "
             f"({resp.status_code}): {resp.text[:300]}",
             file=sys.stderr,
         )
         return []
     return resp.json()
-
-
-def discover_fixtures_with_odds(session: requests.Session, api_key: str, sport_keys: dict,
-                                 date_from: str, date_to: str) -> list:
-    """Verilen liglerde belirtilen tarih aralığındaki gerçek fikstürleri + gerçek oranları
-    the-odds-api.com'dan toplar, tarihe göre sıralar. Form/H2H bu kaynakta yoktur."""
-    matches = []
-    for sport_key, league_name in sport_keys.items():
-        for event in fetch_odds_events(session, api_key, sport_key, date_from, date_to, league_name):
-            matches.append({
-                "match_id": f"m{event['id']}",
-                "league": league_name,
-                "home_team": event["home_team"],
-                "away_team": event["away_team"],
-                "kickoff": event["commence_time"],
-                "odds": extract_1x2_odds(event),
-                "home_form_last5": "veri yok",
-                "away_form_last5": "veri yok",
-                "h2h_last5": "veri yok",
-            })
-    matches.sort(key=lambda m: m["kickoff"])
-    return matches
 
 
 _NAME_JUNK = (" fc", " cf", " afc", " sv", " tsg", " vfl", " vfb", " fsv", " sc", " ac",
@@ -154,14 +175,6 @@ def names_roughly_match(a: str, b: str) -> bool:
     return na == nb or na in nb or nb in na
 
 
-def find_matching_odds_event(events: list, home_name: str, away_name: str) -> dict | None:
-    for event in events:
-        if names_roughly_match(home_name, event.get("home_team", "")) and \
-           names_roughly_match(away_name, event.get("away_team", "")):
-            return event
-    return None
-
-
 def fetch_fd(session: requests.Session, headers: dict, path: str, params: dict | None = None) -> dict | None:
     try:
         resp = session.get(f"{FOOTBALL_DATA_BASE_URL}{path}", headers=headers, params=params, timeout=15)
@@ -174,6 +187,20 @@ def fetch_fd(session: requests.Session, headers: dict, path: str, params: dict |
         print(f"UYARI: football-data.org {path} -> {resp.status_code}: {resp.text[:200]}", file=sys.stderr)
         return None
     return resp.json()
+
+
+def fetch_fd_competition_teams(session: requests.Session, headers: dict, code: str) -> dict:
+    data = fetch_fd(session, headers, f"/competitions/{code}/teams")
+    if not data:
+        return {}
+    return {t["name"]: t["id"] for t in data.get("teams", [])}
+
+
+def resolve_fd_team_id(name_to_id: dict, team_name: str) -> int | None:
+    for fd_name, team_id in name_to_id.items():
+        if names_roughly_match(team_name, fd_name):
+            return team_id
+    return None
 
 
 def fetch_fd_team_form(session: requests.Session, headers: dict, team_id: int) -> str:
@@ -196,94 +223,117 @@ def fetch_fd_team_form(session: requests.Session, headers: dict, team_id: int) -
     return "".join(results) if results else "veri yok"
 
 
-def fetch_fd_h2h(session: requests.Session, headers: dict, match_id: int, home_name: str) -> str:
-    data = fetch_fd(session, headers, f"/matches/{match_id}/head2head", {"limit": 5})
+def fetch_fd_h2h(session: requests.Session, headers: dict, team_id: int, opponent_id: int,
+                  current_home_name: str) -> str:
+    """team_id'nin genel maç geçmişini çekip opponent_id ile oynadığı maçları filtreler
+    (belirli bir FD fikstür id'sine ihtiyaç duymaz - maçlar resmi Spor Toto listesinden
+    geldiği için football-data.org'un kendi fikstür id'si elimizde yok)."""
+    data = fetch_fd(
+        session, headers, f"/teams/{team_id}/matches",
+        {"status": "FINISHED", "limit": FD_H2H_HISTORY_LIMIT},
+    )
     if not data:
         return "veri yok"
-    results = []
+    h2h_matches = []
     for m in data.get("matches", []):
-        score = m.get("score", {}).get("fullTime", {})
-        home_goals, away_goals = score.get("home"), score.get("away")
-        if home_goals is None or away_goals is None:
+        home_t, away_t = m.get("homeTeam", {}), m.get("awayTeam", {})
+        other_id = away_t.get("id") if home_t.get("id") == team_id else home_t.get("id")
+        if other_id != opponent_id:
             continue
-        fixture_home_name = m.get("homeTeam", {}).get("name", "")
-        if home_goals == away_goals:
+        score = m.get("score", {}).get("fullTime", {})
+        if score.get("home") is None or score.get("away") is None:
+            continue
+        h2h_matches.append(m)
+    h2h_matches.sort(key=lambda m: m.get("utcDate", ""))
+    results = []
+    for m in h2h_matches[-5:]:
+        home_t = m["homeTeam"]
+        score = m["score"]["fullTime"]
+        if score["home"] == score["away"]:
             results.append("X")
-        elif (home_goals > away_goals) == (fixture_home_name == home_name):
+        elif (score["home"] > score["away"]) == (home_t["name"] == current_home_name):
             results.append("1")
         else:
             results.append("2")
     return "-".join(results) if results else "veri yok"
 
 
-def discover_fd_matches(session: requests.Session, football_data_key: str, odds_api_key: str,
-                         date_from_d: str, date_to_d: str, date_from_iso: str, date_to_iso: str) -> list:
-    """football-data.org'dan gerçek fikstür + form + H2H çeker, oranı the-odds-api.com'dan
-    takım adı eşleştirmesiyle bulur (bulunamazsa oran boş kalır)."""
-    headers = {"X-Auth-Token": football_data_key}
-    matches = []
-    for code, (league_name, sport_key) in FOOTBALL_DATA_COMPETITIONS.items():
-        data = fetch_fd(
-            session, headers, f"/competitions/{code}/matches",
-            {"status": "SCHEDULED", "dateFrom": date_from_d, "dateTo": date_to_d},
-        )
-        if not data:
-            continue
-        fixtures = sorted(data.get("matches", []), key=lambda m: m["utcDate"])[:FD_MATCHES_PER_LEAGUE]
-        if not fixtures:
-            continue
-        odds_events = fetch_odds_events(session, odds_api_key, sport_key, date_from_iso, date_to_iso, league_name)
-        for m in fixtures:
-            home_name = m["homeTeam"]["name"]
-            away_name = m["awayTeam"]["name"]
-            odds_event = find_matching_odds_event(odds_events, home_name, away_name)
-            matches.append({
-                "match_id": f"fd{m['id']}",
-                "league": league_name,
-                "home_team": home_name,
-                "away_team": away_name,
-                "kickoff": m["utcDate"],
-                "odds": extract_1x2_odds(odds_event) if odds_event else {},
-                "home_form_last5": fetch_fd_team_form(session, headers, m["homeTeam"]["id"]),
-                "away_form_last5": fetch_fd_team_form(session, headers, m["awayTeam"]["id"]),
-                "h2h_last5": fetch_fd_h2h(session, headers, m["id"], home_name),
-            })
-    return matches
-
-
 def load_matches_from_api(odds_api_key: str, football_data_key: str | None = None) -> dict:
+    official_fixtures, week_label = load_official_spor_toto_fixtures(OFFICIAL_MATCHES_FILE)
+    if not official_fixtures:
+        return {"week": week_label, "matches": []}
+
     session = requests.Session()
     today = datetime.now(timezone.utc)
-    date_from_iso = today.strftime("%Y-%m-%dT%H:%M:%SZ")
-    date_to_iso = (today + timedelta(days=FIXTURE_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_from = today.strftime("%Y-%m-%dT%H:%M:%SZ")
+    date_to = (today + timedelta(days=ODDS_SEARCH_WINDOW_DAYS)).strftime("%Y-%m-%dT%H:%M:%SZ")
 
-    # Süper Lig: football-data.org ücretsiz planında yok, sadece the-odds-api.com kullanılır.
-    matches = discover_fixtures_with_odds(
-        session, odds_api_key, {SUPER_LIG_SPORT_KEY: "Süper Lig"}, date_from_iso, date_to_iso
-    )
+    tagged_events = []  # (sport_key, league_name, event)
+    for sport_key, league_name in ODDS_SEARCH_LEAGUES.items():
+        for event in fetch_odds_events(session, odds_api_key, sport_key, date_from, date_to, league_name):
+            tagged_events.append((sport_key, league_name, event))
 
-    if football_data_key:
-        date_from_d = today.strftime("%Y-%m-%d")
-        date_to_d = (today + timedelta(days=FIXTURE_WINDOW_DAYS)).strftime("%Y-%m-%d")
-        matches += discover_fd_matches(
-            session, football_data_key, odds_api_key, date_from_d, date_to_d, date_from_iso, date_to_iso
-        )
-    else:
-        remaining_leagues = {
-            sport_key: league_name
-            for _, (league_name, sport_key) in FOOTBALL_DATA_COMPETITIONS.items()
+    fd_headers = {"X-Auth-Token": football_data_key} if football_data_key else None
+    fd_team_cache: dict[str, dict] = {}
+
+    matches = []
+    for i, fx in enumerate(official_fixtures):
+        home_name, away_name = fx["home_team"], fx["away_team"]
+        match = {
+            "match_id": f"st{i + 1}",
+            "league": "Spor Toto",
+            "home_team": home_name,
+            "away_team": away_name,
+            "kickoff": fx["kickoff"],
+            "odds": {},
+            "home_form_last5": "veri yok",
+            "away_form_last5": "veri yok",
+            "h2h_last5": "veri yok",
         }
-        matches += discover_fixtures_with_odds(session, odds_api_key, remaining_leagues, date_from_iso, date_to_iso)
 
-    matches.sort(key=lambda m: m["kickoff"])
-    return {"week": today.isoformat(), "matches": matches[:MAX_MATCHES]}
+        matched = next(
+            (
+                (sport_key, league_name, event)
+                for sport_key, league_name, event in tagged_events
+                if names_roughly_match(home_name, event.get("home_team", ""))
+                and names_roughly_match(away_name, event.get("away_team", ""))
+            ),
+            None,
+        )
+        if matched:
+            sport_key, league_name, event = matched
+            match["league"] = league_name
+            match["odds"] = extract_1x2_odds(event)
+
+            fd_code = ODDS_KEY_TO_FD_CODE.get(sport_key)
+            if fd_code and fd_headers:
+                if fd_code not in fd_team_cache:
+                    fd_team_cache[fd_code] = fetch_fd_competition_teams(session, fd_headers, fd_code)
+                team_map = fd_team_cache[fd_code]
+                home_id = resolve_fd_team_id(team_map, home_name)
+                away_id = resolve_fd_team_id(team_map, away_name)
+                if home_id:
+                    match["home_form_last5"] = fetch_fd_team_form(session, fd_headers, home_id)
+                if away_id:
+                    match["away_form_last5"] = fetch_fd_team_form(session, fd_headers, away_id)
+                if home_id and away_id:
+                    match["h2h_last5"] = fetch_fd_h2h(session, fd_headers, home_id, away_id, home_name)
+
+        matches.append(match)
+
+    return {"week": week_label or today.strftime("%Y-%m-%d"), "matches": matches}
 
 
 def load_matches() -> dict:
     odds_api_key = os.environ.get("ODDS_API_KEY")
     if odds_api_key:
         football_data_key = os.environ.get("FOOTBALL_DATA_API_KEY")
-        bulletin = load_matches_from_api(odds_api_key, football_data_key)
+        try:
+            bulletin = load_matches_from_api(odds_api_key, football_data_key)
+        except Exception as e:
+            print(f"UYARI: Gerçek veri işlenirken hata oluştu ({e}), matches.json şablonuna dönülüyor.",
+                  file=sys.stderr)
+            return load_matches_from_file(MATCHES_FILE)
         if bulletin["matches"]:
             return bulletin
         print("UYARI: Gerçek maç verisi bulunamadı, matches.json şablonuna dönülüyor.", file=sys.stderr)
@@ -400,11 +450,11 @@ def render_card(match: dict, prediction: dict) -> str:
     confidence = prediction["confidence"]
     color_classes = confidence_color(confidence)
     odds = match["odds"]
-    kickoff = match.get("kickoff", "")
+    kickoff = match.get("kickoff")
     try:
         kickoff_display = datetime.fromisoformat(kickoff).strftime("%d %b %H:%M")
     except (ValueError, TypeError):
-        kickoff_display = kickoff
+        kickoff_display = kickoff or "-"
 
     return f"""
     <div class="bg-slate-800/60 border border-slate-700 rounded-xl p-5 shadow-lg hover:border-slate-500 transition-colors">
