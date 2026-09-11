@@ -3,7 +3,7 @@
 Akış:
   1. Maç verisini oku (matches.json ya da API-Football/RapidAPI)
   2. Kompakt istatistik JSON'u hazırla (token tasarrufu için)
-  3. Claude'dan (claude-haiku-4-5) structured output ile tahmin al
+  3. GitHub Models'dan (gpt-4o-mini) structured output ile tahmin al
   4. index.html olarak render et
 """
 
@@ -12,10 +12,12 @@ import os
 import sys
 from datetime import datetime, timezone
 
-import anthropic
+import openai
 import requests
+from openai import OpenAI
 
-MODEL_ID = "claude-haiku-4-5"
+MODEL_ID = "gpt-4o-mini"
+GITHUB_MODELS_BASE_URL = "https://models.inference.ai.azure.com"
 MATCHES_FILE = os.environ.get("MATCHES_FILE", "matches.json")
 OUTPUT_FILE = os.environ.get("OUTPUT_FILE", "index.html")
 
@@ -145,7 +147,7 @@ def build_compact_payload(bulletin: dict) -> list:
 
 
 # ---------------------------------------------------------------------------
-# 3. Claude ile tahmin üretimi (structured output)
+# 3. GitHub Models (gpt-4o-mini) ile tahmin üretimi (structured output)
 # ---------------------------------------------------------------------------
 
 PREDICTION_SCHEMA = {
@@ -187,21 +189,30 @@ SYSTEM_PROMPT = (
 )
 
 
-def get_predictions(client: anthropic.Anthropic, compact_matches: list) -> dict:
-    response = client.messages.create(
+def get_predictions(client: OpenAI, compact_matches: list) -> dict:
+    response = client.chat.completions.create(
         model=MODEL_ID,
         max_tokens=4096,
-        system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": (
-                "Aşağıdaki maçlar için tahmin üret:\n\n"
-                + json.dumps(compact_matches, ensure_ascii=False)
-            ),
-        }],
-        output_config={"format": {"type": "json_schema", "schema": PREDICTION_SCHEMA}},
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {
+                "role": "user",
+                "content": (
+                    "Aşağıdaki maçlar için tahmin üret:\n\n"
+                    + json.dumps(compact_matches, ensure_ascii=False)
+                ),
+            },
+        ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "predictions_response",
+                "schema": PREDICTION_SCHEMA,
+                "strict": True,
+            },
+        },
     )
-    text = next(b.text for b in response.content if b.type == "text")
+    text = response.choices[0].message.content
     data = json.loads(text)
     return {p["match_id"]: p for p in data["predictions"]}
 
@@ -292,7 +303,7 @@ def render_html(bulletin: dict, predictions: dict) -> str:
     </div>
   </main>
   <footer class="text-center text-slate-600 text-xs py-8">
-    Claude ({MODEL_ID}) ile üretildi · Sorumlu oyun oynayın.
+    GitHub Models ({MODEL_ID}) ile üretildi · Sorumlu oyun oynayın.
   </footer>
 </body>
 </html>
@@ -304,9 +315,9 @@ def render_html(bulletin: dict, predictions: dict) -> str:
 # ---------------------------------------------------------------------------
 
 def main() -> int:
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        print("HATA: ANTHROPIC_API_KEY ortam değişkeni tanımlı değil.", file=sys.stderr)
+    github_token = os.environ.get("GITHUB_TOKEN")
+    if not github_token:
+        print("HATA: GITHUB_TOKEN ortam değişkeni tanımlı değil.", file=sys.stderr)
         return 1
 
     bulletin = load_matches()
@@ -315,12 +326,15 @@ def main() -> int:
         return 1
 
     compact_matches = build_compact_payload(bulletin)
-    client = anthropic.Anthropic(api_key=api_key)
+    client = OpenAI(base_url=GITHUB_MODELS_BASE_URL, api_key=github_token)
 
     try:
         predictions = get_predictions(client, compact_matches)
-    except anthropic.APIStatusError as e:
-        print(f"HATA: Claude API isteği başarısız oldu ({e.status_code}): {e.message}", file=sys.stderr)
+    except openai.APIStatusError as e:
+        print(f"HATA: GitHub Models isteği başarısız oldu ({e.status_code}): {e.message}", file=sys.stderr)
+        return 1
+    except openai.APIConnectionError as e:
+        print(f"HATA: GitHub Models bağlantı hatası: {e}", file=sys.stderr)
         return 1
 
     html = render_html(bulletin, predictions)
